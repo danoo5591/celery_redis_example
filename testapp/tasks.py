@@ -72,11 +72,19 @@ def add(x,y):
     return sum(x,y)
 
 
+@task()
+def sum_task():
+    x = random.randint(0,100)
+    y = random.randint(0,100)
+    s = sum(x,y)
+    logger.info("[sum_task]: %s + %s = %s" % (x,y,s))
+    return s
 
 # @periodic_task(run_every=(crontab(minute='*/15')),name="sum_task",ignore_result=True)
 # A periodic task that will run every minute (the symbol "*" means every)
-@periodic_task(run_every=(crontab(hour="*", minute="*", day_of_week="*")))
-def random_sum():
+# @periodic_task(run_every=(crontab(hour="*", minute="*", day_of_week="*")))
+@task(bind=True)
+def random_sum(self):
     """
     Periodic task example
     """
@@ -84,15 +92,15 @@ def random_sum():
     CANT_TUPLES = 50
     MIN = 0
     MAX = 100
-    # lock_id = '{0}-lock-{1}'.format('random_sum', 1)
-    lock_id = 1
-    logger.debug('Importing random_sum')
-    with memcache_lock(lock_id, 'sem') as acquired:
-        print acquired
+    # lock_id = '{0}-lock-{1}'.format(self.name, 'semaphore')
+    lock_id = 'lock'
+    logger.info('Importing random_sum: %s %s' % (lock_id, self.app.oid))
+    with memcache_lock(lock_id, 'semaphore') as acquired:
+        logger.info("acquired?: "+str(acquired))
         if acquired:
             random.seed()
             random_tuple_list = [(random.randint(MIN,MAX),random.randint(MIN,MAX)) for i in range(CANT_TUPLES)]
             for i,(x,y) in enumerate(random_tuple_list):
                 s = sum(x,y)
                 logger.info("[Index %s]: %s + %s = %s" % (i,x,y,s))
-    logger.debug('random_sum is already being imported by another worker')
+    logger.info('random_sum is already being imported by another worker')
