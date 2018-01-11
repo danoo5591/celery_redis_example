@@ -6,11 +6,36 @@ from celery.utils.log import get_task_logger
 
 from numpy import random
 from scipy.fftpack import fft
-##############################################
 from contextlib import contextmanager
 from django.core.cache import cache
 from hashlib import md5
-##############################################
+
+logger = get_task_logger(__name__)
+
+
+####################################################################
+
+LOCK_EXPIRE = 60 * 10  # Lock expires in 10 minutes
+
+@contextmanager
+def memcache_lock(lock_id, oid):
+    timeout_at = monotonic() + LOCK_EXPIRE - 3
+    # cache.add fails if the key already exists
+    status = cache.add(lock_id, oid)
+    logger.info('[memcache_lock]: lock_id=%s, oid=%s' % (lock_id, oid))
+    try:
+        yield status
+    finally:
+        # memcache delete is very slow, but we have to use it to take
+        # advantage of using add() for atomic locking
+        logger.info('[memcache_lock]: monotonic=%s, timeout_at=%s' % (monotonic(), timeout_at))
+        if monotonic() < timeout_at:
+            # don't release the lock if we exceeded the timeout
+            # to lessen the chance of releasing an expired lock
+            # owned by someone else.
+            cache.delete(lock_id)
+
+##################################################################
 
 logger = get_task_logger(__name__)
 
@@ -31,26 +56,6 @@ def sum(x,y):
         time.sleep(0.2)
         idx += 1
     return x+y
-
-
-LOCK_EXPIRE = 60 * 10  # Lock expires in 10 minutes
-
-@contextmanager
-def memcache_lock(lock_id, value):
-    timeout_at = monotonic() + LOCK_EXPIRE - 3
-    # cache.add fails if the key already exists
-    status = cache.add(lock_id, value, LOCK_EXPIRE)
-    try:
-        yield status
-    finally:
-        # memcache delete is very slow, but we have to use it to take
-        # advantage of using add() for atomic locking
-        if monotonic() < timeout_at:
-            # don't release the lock if we exceeded the timeout
-            # to lessen the chance of releasing an expired lock
-            # owned by someone else.
-            cache.delete(lock_id)
-
 
 @shared_task
 def fft_random(n):
@@ -84,7 +89,7 @@ def sum_task():
 # A periodic task that will run every minute (the symbol "*" means every)
 # @periodic_task(run_every=(crontab(hour="*", minute="*", day_of_week="*")))
 @task(bind=True)
-def random_sum(self):
+def random_sum():
     """
     Periodic task example
     """
@@ -92,10 +97,9 @@ def random_sum(self):
     CANT_TUPLES = 50
     MIN = 0
     MAX = 100
-    # lock_id = '{0}-lock-{1}'.format(self.name, 'semaphore')
-    lock_id = 'lock'
-    logger.info('Importing random_sum: %s %s' % (lock_id, self.app.oid))
-    with memcache_lock(lock_id, 'semaphore') as acquired:
+    lock_id = "{0}-lock-{1}".format("random_sum", "semaphore")
+    logger.info('Importing random_sum: %s' % lock_id)
+    with memcache_lock(lock_id, "semaphore") as acquired:
         logger.info("acquired?: "+str(acquired))
         if acquired:
             random.seed()

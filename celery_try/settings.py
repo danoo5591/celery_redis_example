@@ -109,9 +109,9 @@ USE_TZ = True
 STATIC_URL = '/static/'
 
 CACHES = {
-   'default': {
-        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-        # 'LOCATION': 'localhost:11211',
-   }
+    'default': {
+        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': 'disk_buffer',
+    }
 }
 # CACHE_BACKEND = 'memcached://localhost:11211/'
